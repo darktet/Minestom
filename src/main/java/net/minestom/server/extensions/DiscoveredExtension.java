@@ -1,6 +1,7 @@
 package net.minestom.server.extensions;
 
 import com.google.gson.JsonObject;
+import net.minestom.server.MinecraftServer;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

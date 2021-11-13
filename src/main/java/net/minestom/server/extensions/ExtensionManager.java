@@ -7,6 +7,7 @@ import net.minestom.dependencies.maven.MavenRepository;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
+import net.minestom.server.extensions.isolation.MinestomExtensionClassLoader;
 import net.minestom.server.ping.ResponseDataConsumer;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.ApiStatus;
@@ -649,6 +650,135 @@ public class ExtensionManager {
             }
             LOGGER.trace("Dependency {} has had its subdependencies added.", location.toExternalForm());
         }
+    }
+
+    @NotNull
+    public File getExtensionFolder() {
+        return extensionFolder;
+    }
+
+    public @NotNull Path getExtensionDataRoot() {
+        return extensionDataRoot;
+    }
+
+    public void setExtensionDataRoot(@NotNull Path dataRoot) {
+        this.extensionDataRoot = dataRoot;
+    }
+
+    @NotNull
+    public Collection<Extension> getExtensions() {
+        return immutableExtensions.values();
+    }
+
+    @Nullable
+    public Extension getExtension(@NotNull String name) {
+        return extensions.get(name.toLowerCase());
+    }
+
+    public boolean hasExtension(@NotNull String name) {
+        return extensions.containsKey(name);
+    }
+
+    private void unload(@NotNull Extension ext) {
+        ext.preTerminate();
+        ext.terminate();
+        // remove callbacks for this extension
+        String extensionName = ext.getOrigin().getName();
+        ext.triggerChange(observer -> observer.onExtensionUnload(extensionName));
+        // TODO: more callback types
+
+        // Remove event node
+        EventNode<Event> eventNode = ext.getEventNode();
+        MinecraftServer.getGlobalEventHandler().removeChild(eventNode);
+
+        ext.postTerminate();
+        ext.unload();
+
+        // remove as dependent of other extensions
+        // this avoids issues where a dependent extension fails to reload, and prevents the base extension to reload too
+        for (Extension e : extensions.values()) {
+            e.getDependents().remove(ext.getOrigin().getName());
+        }
+
+        String id = ext.getOrigin().getName().toLowerCase();
+        // remove from loaded extensions
+        extensions.remove(id);
+
+        // remove class loader, required to reload the classes
+        MinestomExtensionClassLoader classloader = ext.getOrigin().removeMinestomExtensionClassLoader();
+        try {
+            // close resources
+            classloader.close();
+        } catch (IOException e) {
+            MinecraftServer.getExceptionManager().handleException(e);
+        }
+        //TODO : Remove extension from dependents
+//        MinestomRootClassLoader.getInstance().removeChildInHierarchy(classloader);
+    }
+
+    public boolean reload(@NotNull String extensionName) {
+        Extension ext = extensions.get(extensionName.toLowerCase());
+        if (ext == null) {
+            throw new IllegalArgumentException("Extension " + extensionName + " is not currently loaded.");
+        }
+
+        File originalJar = ext.getOrigin().getOriginalJar();
+        if (originalJar == null) {
+            LOGGER.error("Cannot reload extension {} that is not from a .jar file!", extensionName);
+            return false;
+        }
+
+        LOGGER.info("Reload extension {} from jar file {}", extensionName, originalJar.getAbsolutePath());
+        List<String> dependents = new LinkedList<>(ext.getDependents()); // copy dependents list
+        List<File> originalJarsOfDependents = new LinkedList<>();
+
+        for (String dependentID : dependents) {
+            Extension dependentExt = extensions.get(dependentID.toLowerCase());
+            File dependentOriginalJar = dependentExt.getOrigin().getOriginalJar();
+            originalJarsOfDependents.add(dependentOriginalJar);
+            if (dependentOriginalJar == null) {
+                LOGGER.error("Cannot reload extension {} that is not from a .jar file!", dependentID);
+                return false;
+            }
+
+            LOGGER.info("Unloading dependent extension {} (because it depends on {})", dependentID, extensionName);
+            unload(dependentExt);
+        }
+
+        LOGGER.info("Unloading extension {}", extensionName);
+        unload(ext);
+
+        System.gc();
+
+        // ext and its dependents should no longer be referenced from now on
+
+        // rediscover extension to reload. We allow dependency changes, so we need to fully reload it
+        List<DiscoveredExtension> extensionsToReload = new LinkedList<>();
+        LOGGER.info("Rediscover extension {} from jar {}", extensionName, originalJar.getAbsolutePath());
+        DiscoveredExtension rediscoveredExtension = discoverFromJar(originalJar);
+        extensionsToReload.add(rediscoveredExtension);
+
+        for (File dependentJar : originalJarsOfDependents) {
+            // rediscover dependent extension to reload
+            LOGGER.info("Rediscover dependent extension (depends on {}) from jar {}", extensionName, dependentJar.getAbsolutePath());
+            extensionsToReload.add(discoverFromJar(dependentJar));
+        }
+
+        // ensure correct order of dependencies
+        loadExtensionList(extensionsToReload);
+
+        return true;
+    }
+
+    public boolean loadDynamicExtension(@NotNull File jarFile) throws FileNotFoundException {
+        if (!jarFile.exists()) {
+            throw new FileNotFoundException("File '" + jarFile.getAbsolutePath() + "' does not exists. Cannot load extension.");
+        }
+
+        LOGGER.info("Discover dynamic extension from jar {}", jarFile.getAbsolutePath());
+        DiscoveredExtension discoveredExtension = discoverFromJar(jarFile);
+        List<DiscoveredExtension> extensionsToLoad = Collections.singletonList(discoveredExtension);
+        return loadExtensionList(extensionsToLoad);
     }
 
     private boolean loadExtensionList(@NotNull List<DiscoveredExtension> extensionsToLoad) {
