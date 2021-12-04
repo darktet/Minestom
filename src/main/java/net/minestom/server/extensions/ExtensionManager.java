@@ -420,7 +420,7 @@ public class ExtensionManager {
      * @return A list of discovered extensions from this folder.
      */
     private @NotNull List<DiscoveredExtension> discoverExtensions() {
-        List<DiscoveredExtension> extensions = new LinkedList<>();
+        List<DiscoveredExtension> extensions = new ArrayList<>();
 
         // Attempt to find all the extensions
         try {
@@ -552,7 +552,7 @@ public class ExtensionManager {
         }
 
         // List containing the load order.
-        LinkedList<DiscoveredExtension> sortedList = new LinkedList<>();
+        List<DiscoveredExtension> sortedList = new ArrayList<>();
 
         // TODO actually have to read this
         {
@@ -609,7 +609,7 @@ public class ExtensionManager {
     }
 
     private void loadDependencies(@NotNull List<DiscoveredExtension> extensions) {
-        List<DiscoveredExtension> allLoadedExtensions = new LinkedList<>(extensions);
+        List<DiscoveredExtension> allLoadedExtensions = new ArrayList<>(extensions);
 
         for (Extension extension : immutableExtensions.values())
             allLoadedExtensions.add(extension.getOrigin());
@@ -618,7 +618,7 @@ public class ExtensionManager {
             try {
                 DependencyGetter getter = new DependencyGetter();
                 DiscoveredExtension.ExternalDependencies externalDependencies = discoveredExtension.getExternalDependencies();
-                List<MavenRepository> repoList = new LinkedList<>();
+                List<MavenRepository> repoList = new ArrayList<>();
                 for (var repository : externalDependencies.repositories) {
 
                     if (repository.name == null || repository.name.isEmpty()) {
@@ -689,7 +689,7 @@ public class ExtensionManager {
 //            toReload.setMinestomExtensionClassLoader(toReload.makeClassLoader()); //TODO: Fix this
         }
 
-        List<Extension> newExtensions = new LinkedList<>();
+        List<Extension> newExtensions = new ArrayList<>();
         for (DiscoveredExtension toReload : extensionsToLoad) {
             // reload extensions
             LOGGER.info("Actually load extension {}", toReload.getName());
@@ -735,7 +735,7 @@ public class ExtensionManager {
             throw new IllegalArgumentException("Extension " + extensionName + " is not currently loaded.");
         }
 
-        List<String> dependents = new LinkedList<>(ext.getDependents()); // copy dependents list
+        List<String> dependents = new ArrayList<>(ext.getDependents()); // copy dependents list
 
         for (String dependentID : dependents) {
             Extension dependentExt = extensions.get(dependentID.toLowerCase());
