@@ -605,10 +605,9 @@ public class ExtensionManager {
      * @return If all of these extensions are loaded.
      */
     private boolean isLoaded(@NotNull List<DiscoveredExtension> extensions) {
-        return
-                extensions.isEmpty() // Don't waste CPU on checking an empty array
-                        // Make sure the internal extensions list contains all of these.
-                        || extensions.stream().allMatch(ext -> this.extensions.containsKey(ext.name().toLowerCase()));
+        return extensions.isEmpty() // Don't waste CPU on checking an empty array
+                // Make sure the internal extensions list contains all of these.
+                || extensions.stream().allMatch(ext -> this.extensions.containsKey(ext.name().toLowerCase()));
     }
 
     private void loadDependencies(@NotNull List<DiscoveredExtension> extensions) {
