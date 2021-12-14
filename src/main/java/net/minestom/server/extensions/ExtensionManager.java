@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-public class ExtensionManager {
+public final class ExtensionManager {
 
     public final static Logger LOGGER = LoggerFactory.getLogger(ExtensionManager.class);
 
@@ -45,20 +45,14 @@ public class ExtensionManager {
     private final Map<String, Extension> extensions = new LinkedHashMap<>();
     private final Map<String, Extension> immutableExtensions = Collections.unmodifiableMap(extensions);
 
-    private final Path extensionFolder = Paths.get("extensions");
-    private final Path dependenciesFolder = extensionFolder.resolve(".libs");
-    private Path extensionDataRoot = extensionFolder;
+    private Path extensionDataRoot = Paths.get("extensions");
+    private Path dependenciesFolder = extensionDataRoot.resolve(".libs");
 
     private enum State {DO_NOT_START, NOT_STARTED, STARTED, PRE_INIT, INIT, POST_INIT}
 
     private State state = LOAD_ON_START ? State.NOT_STARTED : State.DO_NOT_START;
 
     public ExtensionManager() {
-    }
-
-    @NotNull
-    public Path getExtensionFolder() {
-        return extensionFolder;
     }
 
     public @NotNull Path getExtensionDataRoot() {
@@ -68,6 +62,7 @@ public class ExtensionManager {
     public void setExtensionDataRoot(@NotNull Path dataRoot) {
         Check.stateCondition(state.ordinal() > State.NOT_STARTED.ordinal(), "Cannot set data root after initialization.");
         this.extensionDataRoot = dataRoot;
+        this.dependenciesFolder = extensionDataRoot.resolve(".libs");
     }
 
     @NotNull
@@ -196,8 +191,8 @@ public class ExtensionManager {
         // Initialize folders
         try {
             // Make extensions folder if necessary
-            if (!Files.exists(extensionFolder)) {
-                Files.createDirectories(extensionFolder);
+            if (!Files.exists(extensionDataRoot)) {
+                Files.createDirectories(extensionDataRoot);
             }
 
             // Make dependencies folder if necessary
@@ -250,17 +245,6 @@ public class ExtensionManager {
                 }
             }
         }
-    }
-
-    public boolean loadDynamicExtension(@NotNull Path jarFile) throws FileNotFoundException {
-        if (!Files.exists(jarFile)) {
-            throw new FileNotFoundException("File '" + jarFile.toAbsolutePath() + "' does not exists. Cannot load extension.");
-        }
-
-        LOGGER.info("Discover dynamic extension from jar {}", jarFile.toAbsolutePath());
-        DiscoveredExtension discoveredExtension = discoverFromJar(jarFile);
-        List<DiscoveredExtension> extensionsToLoad = Collections.singletonList(discoveredExtension);
-        return loadExtensionList(extensionsToLoad);
     }
 
     /**
@@ -666,40 +650,6 @@ public class ExtensionManager {
             }
             LOGGER.trace("Dependency {} has had its subdependencies added.", location.toExternalForm());
         }
-    }
-
-    private boolean loadExtensionList(@NotNull List<DiscoveredExtension> extensionsToLoad) {
-        // ensure correct order of dependencies
-        LOGGER.debug("Reorder extensions to ensure proper load order");
-        extensionsToLoad = generateLoadOrder(extensionsToLoad);
-        loadDependencies(extensionsToLoad);
-
-        // setup new classloaders for the extensions to reload
-        for (DiscoveredExtension toReload : extensionsToLoad) {
-            LOGGER.debug("Setting up classloader for extension {}", toReload.name());
-//            toReload.setMinestomExtensionClassLoader(toReload.makeClassLoader()); //TODO: Fix this
-        }
-
-        List<Extension> newExtensions = new ArrayList<>();
-        for (DiscoveredExtension toReload : extensionsToLoad) {
-            // reload extensions
-            LOGGER.info("Actually load extension {}", toReload.name());
-            Extension loadedExtension = loadExtension(toReload);
-            if (loadedExtension != null) {
-                newExtensions.add(loadedExtension);
-            }
-        }
-
-        if (newExtensions.isEmpty()) {
-            LOGGER.error("No extensions to load, skipping callbacks");
-            return false;
-        }
-
-        LOGGER.info("Load complete, firing preinit, init and then postinit callbacks");
-        // retrigger preinit, init and postinit
-        newExtensions.forEach(Extension::preInitialize);
-        newExtensions.forEach(Extension::initialize);
-        return true;
     }
 
     //
