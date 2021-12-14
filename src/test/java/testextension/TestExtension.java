@@ -6,10 +6,12 @@ import net.minestom.server.extensions.Extension;
 public class TestExtension extends Extension {
 
     @Override
-    public void preInitialize() {
+    public LoadStatus preInitialize() {
         System.out.println("During preinit");
         MinecraftServer.setTerminalEnabled(false);
         System.out.println("Mwahaha i disabled the terminal");
+
+        return LoadStatus.SUCCESS;
     }
 
     @Override
