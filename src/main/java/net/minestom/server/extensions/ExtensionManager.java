@@ -7,6 +7,8 @@ import net.minestom.dependencies.maven.MavenRepository;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
+import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.exception.ExceptionManager;
 import net.minestom.server.utils.PropertyUtil;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.ApiStatus;
@@ -40,6 +42,9 @@ public final class ExtensionManager {
     private final static String INDEV_CLASSES_FOLDER = System.getProperty("minestom.extension.indevfolder.classes");
     private final static String INDEV_RESOURCES_FOLDER = System.getProperty("minestom.extension.indevfolder.resources");
     private final static Gson GSON = new Gson();
+    
+    private final ExceptionManager exceptionManager;
+    private final GlobalEventHandler globalEventHandler;
 
     // LinkedHashMaps are HashMaps that preserve order
     private final Map<String, Extension> extensions = new LinkedHashMap<>();
@@ -52,7 +57,9 @@ public final class ExtensionManager {
 
     private State state = LOAD_ON_START ? State.NOT_STARTED : State.DO_NOT_START;
 
-    public ExtensionManager() {
+    public ExtensionManager(ExceptionManager exceptionManager, GlobalEventHandler globalEventHandler) {
+        this.exceptionManager = exceptionManager;
+        this.globalEventHandler = globalEventHandler;
     }
 
     public @NotNull Path getExtensionDataRoot() {
@@ -201,7 +208,7 @@ public final class ExtensionManager {
             }
         } catch (IOException e) {
             LOGGER.error("Could not find nor create an extension folder, extensions will not be loaded!");
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
             return;
         }
 
@@ -221,7 +228,7 @@ public final class ExtensionManager {
                     discoveredExtension.createClassLoader();
                 } catch (Exception e) {
                     discoveredExtension.loadStatus = DiscoveredExtension.LoadStatus.FAILED_TO_SETUP_CLASSLOADER;
-                    MinecraftServer.getExceptionManager().handleException(e);
+                    exceptionManager.handleException(e);
                     LOGGER.error("Failed to load extension {}", discoveredExtension.name());
                     LOGGER.error("Failed to load extension", e);
                     extensionIterator.remove();
@@ -241,7 +248,7 @@ public final class ExtensionManager {
                 } catch (Exception e) {
                     discoveredExtension.loadStatus = DiscoveredExtension.LoadStatus.LOAD_FAILED;
                     LOGGER.error("Failed to load extension {}", discoveredExtension.name());
-                    MinecraftServer.getExceptionManager().handleException(e);
+                    exceptionManager.handleException(e);
                 }
             }
         }
@@ -329,7 +336,7 @@ public final class ExtensionManager {
             loggerField.set(extension, LoggerFactory.getLogger(extensionClass));
         } catch (IllegalAccessException e) {
             // We made it accessible, should not occur
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
         } catch (NoSuchFieldException e) {
             // This should also not occur (unless someone changed the logger in Extension superclass).
             LOGGER.error("Main class '{}' in '{}' has no logger field.", mainClass, extensionName, e);
@@ -342,10 +349,10 @@ public final class ExtensionManager {
             loggerField.setAccessible(true);
             loggerField.set(extension, eventNode);
 
-            MinecraftServer.getGlobalEventHandler().addChild(eventNode);
+            globalEventHandler.addChild(eventNode);
         } catch (IllegalAccessException e) {
             // We made it accessible, should not occur
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
         } catch (NoSuchFieldException e) {
             // This should also not occur
             LOGGER.error("Main class '{}' in '{}' has no event node field.", mainClass, extensionName, e);
@@ -380,7 +387,7 @@ public final class ExtensionManager {
 
         // Attempt to find all the extensions
         try {
-            Files.list(extensionFolder)
+            Files.list(extensionDataRoot)
                     .filter(file -> file != null &&
                             !Files.isDirectory(file) &&
                             file.getFileName().toString().endsWith(".jar"))
@@ -388,7 +395,7 @@ public final class ExtensionManager {
                     .filter(ext -> ext != null && ext.loadStatus == DiscoveredExtension.LoadStatus.LOAD_SUCCESS)
                     .forEach(extensions::add);
         } catch (IOException e) {
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
         }
 
         // Dynamic load (autoscan and indev extension)
@@ -405,7 +412,7 @@ public final class ExtensionManager {
                         extensions.add(extension);
                     }
                 } catch (URISyntaxException e) {
-                    MinecraftServer.getExceptionManager().handleException(e);
+                    exceptionManager.handleException(e);
                 }
             }
         } else {
@@ -426,7 +433,7 @@ public final class ExtensionManager {
                 extensions.add(extension);
             }
         } catch (MalformedURLException e) {
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
         }
         return extensions;
     }
@@ -458,7 +465,7 @@ public final class ExtensionManager {
 
             return extension;
         } catch (IOException e) {
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
             return null;
         }
     }
@@ -474,7 +481,7 @@ public final class ExtensionManager {
 
             return extension;
         } catch (IOException e) {
-            MinecraftServer.getExceptionManager().handleException(e);
+            exceptionManager.handleException(e);
             return null;
         }
     }
@@ -690,7 +697,7 @@ public final class ExtensionManager {
     private void unload(@NotNull Extension ext) {
         ext.terminate();
 
-        MinecraftServer.getGlobalEventHandler().removeChild(ext.eventNode());
+        globalEventHandler.removeChild(ext.eventNode());
 
         // remove from loaded extensions
         String id = ext.origin().name().toLowerCase();

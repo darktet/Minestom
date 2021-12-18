@@ -126,7 +126,7 @@ public final class MinecraftServer {
         // Initialize the ExceptionManager at first
         exceptionManager = new ExceptionManager();
 
-        extensionManager = new ExtensionManager();
+        extensionManager = new ExtensionManager(exceptionManager, GLOBAL_EVENT_HANDLER);
 
         // warmup/force-init registries
         // without this line, registry types that are not loaded explicitly will have an internal empty registry in Registries
