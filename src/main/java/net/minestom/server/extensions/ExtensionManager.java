@@ -121,37 +121,6 @@ public final class ExtensionManager {
     // Loading
     //
 
-    @NotNull
-    public File getExtensionFolder() {
-        return extensionFolder;
-    }
-
-    public @NotNull Path getExtensionDataRoot() {
-        return extensionDataRoot;
-    }
-
-    public void setExtensionDataRoot(@NotNull Path dataRoot) {
-        this.extensionDataRoot = dataRoot;
-    }
-
-    @NotNull
-    public Collection<Extension> getExtensions() {
-        return immutableExtensions.values();
-    }
-
-    @Nullable
-    public Extension getExtension(@NotNull String name) {
-        return extensions.get(name.toLowerCase());
-    }
-
-    public boolean hasExtension(@NotNull String name) {
-        return extensions.containsKey(name);
-    }
-
-    //
-    // Loading
-    //
-
     /**
      * Loads all extensions in the extension folder into this server.
      * <br><br>

@@ -216,38 +216,6 @@ public final class DiscoveredExtension {
 
     }
 
-    @NotNull
-    public JsonObject getMeta() {
-        return meta;
-    }
-
-    public MinestomExtensionClassLoader makeClassLoader() {
-        final URL[] urls = this.files.toArray(new URL[0]);
-
-        MinestomRootClassLoader root = MinestomRootClassLoader.getInstance();
-
-        MinestomExtensionClassLoader loader = new MinestomExtensionClassLoader(this.getName(), this.getEntrypoint(), urls, root);
-
-        if (this.getDependencies().length == 0 || MinecraftServer.getExtensionManager() == null) { // it also may invoked in early class loader
-            // orphaned extension, we can insert it directly
-            root.addChild(loader);
-        } else {
-            // add children to the dependencies
-            for (String dependency : this.getDependencies()) {
-                if (MinecraftServer.getExtensionManager().hasExtension(dependency.toLowerCase())) {
-                    MinestomExtensionClassLoader parentLoader = MinecraftServer.getExtensionManager().getExtension(dependency.toLowerCase()).getOrigin().getMinestomExtensionClassLoader();
-
-                    // TODO should never happen but replace with better throws error.
-                    assert parentLoader != null;
-
-                    parentLoader.addChild(loader);
-                }
-            }
-        }
-
-        return loader;
-    }
-
     /**
      * The status this extension has, all are breakpoints.
      * <p>
