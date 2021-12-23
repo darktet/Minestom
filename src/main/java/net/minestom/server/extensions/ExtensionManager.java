@@ -7,9 +7,8 @@ import net.minestom.dependencies.maven.MavenRepository;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
-import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.exception.ExceptionManager;
-import net.minestom.server.instance.block.Block;
+import net.minestom.server.extensions.descriptor.ExtensionDescriptor;
 import net.minestom.server.utils.PropertyUtil;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.ApiStatus;
@@ -30,7 +29,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -46,7 +44,8 @@ public final class ExtensionManager {
     private final static Gson GSON = new Gson();
     
     private final ExceptionManager exceptionManager;
-    private final EventNode<Event> globalEventHandler;
+    private final EventNode<Event> globalEventNode;
+    private final ExtensionDiscoverer discoverer;
 
     // LinkedHashMaps are HashMaps that preserve order
     private final Map<String, Extension> extensions = new LinkedHashMap<>();
@@ -59,9 +58,14 @@ public final class ExtensionManager {
 
     private State state = LOAD_ON_START ? State.NOT_STARTED : State.DO_NOT_START;
 
-    public ExtensionManager(ExceptionManager exceptionManager, EventNode<Event> globalEventHandler) {
+    public ExtensionManager(ExceptionManager exceptionManager, EventNode<Event> globalEventNode) {
+        this(exceptionManager, globalEventNode, ExtensionDiscoverer.DEFAULT);
+    }
+
+    ExtensionManager(ExceptionManager exceptionManager, EventNode<Event> globalEventNode, ExtensionDiscoverer discoverer) {
         this.exceptionManager = exceptionManager;
-        this.globalEventHandler = globalEventHandler;
+        this.globalEventNode = globalEventNode;
+        this.discoverer = discoverer;
     }
 
     public @NotNull Path getExtensionDataRoot() {
@@ -117,29 +121,42 @@ public final class ExtensionManager {
         Check.stateCondition(state != State.PRE_INIT, "Extensions have already done initialization");
         extensions.values().forEach(Extension::initialize);
         state = State.INIT;
+
     }
 
     //
     // Loading
     //
 
+    private record LoadData() {}
+
     private void loadExtensions2() {
         // Find all .jar files in extensions directory
         // Load (and validate) descriptors
         // Discover indev extension
         // Discover autoscan extensions
+        List<ExtensionDescriptor> discovered = discoverer.discover(extensionDataRoot);
+
         // For each extension:
-        //   - if in extension list, we have a circular dependency
-        //   - add to list of extensions
-        //   - download external dependencies
-        //   - pre init
-        //   - remove it and all dependents if failed to load
+
 
 
         // Is ordering as simple as recursive calls that ensure they arent going in a circle?
     }
 
-//    Stream<Path>
+    //todo docs
+    // history is the extensions loaded before this (in a dependency tree)
+    void loadExtensionRecursive(ExtensionDescriptor extension, Set<String> history) {
+
+
+        //   - if in extension list, we have a circular dependency
+        //   - add to list of extensions
+        //   - download external dependencies
+        //   - pre init
+        //   - remove it and all dependents if failed to load
+    }
+
+
 
 
     //
@@ -343,7 +360,7 @@ public final class ExtensionManager {
             loggerField.setAccessible(true);
             loggerField.set(extension, eventNode);
 
-            globalEventHandler.addChild(eventNode);
+            globalEventNode.addChild(eventNode);
         } catch (IllegalAccessException e) {
             // We made it accessible, should not occur
             exceptionManager.handleException(e);
@@ -690,7 +707,7 @@ public final class ExtensionManager {
     private void unload(@NotNull Extension ext) {
         ext.terminate();
 
-        globalEventHandler.removeChild(ext.eventNode());
+        globalEventNode.removeChild(ext.eventNode());
 
         // remove from loaded extensions
         String id = ext.origin().name().toLowerCase();
