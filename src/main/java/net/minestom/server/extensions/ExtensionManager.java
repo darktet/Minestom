@@ -8,6 +8,7 @@ import net.minestom.server.MinecraftServer;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
 import net.minestom.server.exception.ExceptionManager;
+import net.minestom.server.extensions.descriptor.Dependency;
 import net.minestom.server.extensions.descriptor.ExtensionDescriptor;
 import net.minestom.server.utils.PropertyUtil;
 import net.minestom.server.utils.validate.Check;
@@ -28,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -128,32 +130,69 @@ public final class ExtensionManager {
     // Loading
     //
 
-    private record LoadData() {}
 
     private void loadExtensions2() {
-        // Find all .jar files in extensions directory
-        // Load (and validate) descriptors
-        // Discover indev extension
-        // Discover autoscan extensions
-        List<ExtensionDescriptor> discovered = discoverer.discover(extensionDataRoot);
+        // Discover all extensions
+        Map<String, ExtensionDescriptor> extensionByName = discoverer.discover(extensionDataRoot)
+                .collect(Collectors.toMap(ext -> ext.name().toLowerCase(), Function.identity()));
+        if (extensionByName.isEmpty()) return;
+
+        // Compute the load order depending on dependencies
+        List<ExtensionDescriptor> loadOrder = computeLoadOrder(extensionByName);
+
 
         // For each extension:
-
-
-
-        // Is ordering as simple as recursive calls that ensure they arent going in a circle?
-    }
-
-    //todo docs
-    // history is the extensions loaded before this (in a dependency tree)
-    void loadExtensionRecursive(ExtensionDescriptor extension, Set<String> history) {
-
-
-        //   - if in extension list, we have a circular dependency
-        //   - add to list of extensions
         //   - download external dependencies
         //   - pre init
         //   - remove it and all dependents if failed to load
+
+
+    }
+
+
+    List<ExtensionDescriptor> computeLoadOrder(Map<String, ExtensionDescriptor> extensionsByName) {
+        Map<ExtensionDescriptor, List<ExtensionDescriptor>> dependents = new HashMap<>();
+        for (ExtensionDescriptor extension : extensionsByName.values()) {
+            for (Dependency dependency : extension.dependencies()) {
+                if (dependency instanceof Dependency.ExtensionDependency extensionDependency) {
+                    ExtensionDescriptor dependencyExtension = extensionsByName.get(extensionDependency.id().toLowerCase());
+                    if (dependencyExtension == null) {
+                        if (extensionDependency.isOptional()) {
+                            LOGGER.debug("Optional extension {} (for {}) was not found.", extensionDependency.id(), extension.name());
+                        } else {
+                            throw new IllegalStateException("Unknown extension: " + extensionDependency.id() + " (dependency of " + extension.name() + ")");
+                        }
+                    }
+                    dependents.computeIfAbsent(dependencyExtension, k -> new ArrayList<>())
+                            .add(extension);
+                }
+            }
+        }
+
+        List<ExtensionDescriptor> ordered = new ArrayList<>();
+        for (ExtensionDescriptor extension : extensionsByName.values()) {
+            if (ordered.contains(extension)) continue;
+
+            computeLoadOrderRecursive(extension, ordered, dependents, List.of());
+        }
+
+        return ordered;
+    }
+
+    private void computeLoadOrderRecursive(ExtensionDescriptor target, List<ExtensionDescriptor> loadOrder, Map<ExtensionDescriptor, List<ExtensionDescriptor>> dependentMap, List<String> path) {
+        if (loadOrder.contains(target)) return;
+        if (path.contains(target.name())) {
+            throw new IllegalStateException("Illegal circular extension dependency: " + String.join(" -> ", path) + " -> " + target.name());
+        }
+
+        List<String> newPath = new ArrayList<>(path);
+        newPath.add(target.name());
+
+        for (ExtensionDescriptor dependent : dependentMap.getOrDefault(target, Collections.emptyList())) {
+            computeLoadOrderRecursive(dependent, loadOrder, dependentMap, newPath);
+        }
+
+        loadOrder.add(0, target);
     }
 
 
