@@ -22,6 +22,7 @@ import java.io.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -35,26 +36,37 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public final class ExtensionManager {
-
     public final static Logger LOGGER = LoggerFactory.getLogger(ExtensionManager.class);
 
+    // Properties
     private static final boolean LOAD_ON_START = PropertyUtil.getBoolean("minestom.extension.load-on-start", true);
     private static final boolean AUTOSCAN_ENABLED = PropertyUtil.getBoolean("minestom.extension.autoscan", true);
     private static final String AUTOSCAN_TARGETS = System.getProperty("minestom.extension.autoscan.targets", "extension.json");
     private final static String INDEV_CLASSES_FOLDER = System.getProperty("minestom.extension.indevfolder.classes");
     private final static String INDEV_RESOURCES_FOLDER = System.getProperty("minestom.extension.indevfolder.resources");
-    private final static Gson GSON = new Gson();
-    
+
+    // Server state
     private final ExceptionManager exceptionManager;
     private final EventNode<Event> globalEventNode;
     private final ExtensionDiscoverer discoverer;
 
-    // LinkedHashMaps are HashMaps that preserve order
+    // Internal state
     private final Map<String, Extension> extensions = new LinkedHashMap<>();
     private final Map<String, Extension> immutableExtensions = Collections.unmodifiableMap(extensions);
+    private final Map<String, HierarchyClassLoader> externalDependencies = new HashMap<>();
 
     private Path extensionDataRoot = Paths.get("extensions");
     private Path dependenciesFolder = extensionDataRoot.resolve(".libs");
+
+    private boolean started = false;
+
+
+
+
+
+
+
+    private final static Gson GSON = new Gson();
 
     private enum State {DO_NOT_START, NOT_STARTED, STARTED, PRE_INIT, INIT, POST_INIT}
 
@@ -123,6 +135,45 @@ public final class ExtensionManager {
         Check.stateCondition(state != State.PRE_INIT, "Extensions have already done initialization");
         extensions.values().forEach(Extension::initialize);
         state = State.INIT;
+
+    }
+
+    // todo no more phases, just
+    //      init()
+    //      start()
+
+    @ApiStatus.Internal
+    public void init2() {
+        Check.stateCondition(started, "ExtensionManager has already been initialized");
+        if (!LOAD_ON_START) return;
+
+        //todo CREATE MISSING DIRECTORIES (only create libs dir if needed)
+
+        //todo PRE INIT
+        //  - load dependencies
+        //  - if all loaded do A, else B
+        //  A:
+        //  - download external dependencies
+        //  - call preinit
+        //  - return according to result of preinit
+        //  B:
+        //  - remove from extension list
+        //  - show error
+        //  - return false
+
+
+    }
+
+    @ApiStatus.Internal
+    public void start2() {
+        Check.stateCondition(started, "ExtensionManager has already been started");
+        if (!LOAD_ON_START) return;
+
+
+    }
+
+    @ApiStatus.Internal
+    public void shutdown2() {
 
     }
 
@@ -316,7 +367,7 @@ public final class ExtensionManager {
         String extensionName = discoveredExtension.name();
         String mainClass = discoveredExtension.entrypoint();
 
-        ExtensionClassLoader loader = discoveredExtension.classLoader();
+        HierarchyClassLoader loader = discoveredExtension.classLoader();
 
         if (extensions.containsKey(extensionName.toLowerCase())) {
             LOGGER.error("An extension called '{}' has already been registered.", extensionName);
@@ -671,14 +722,14 @@ public final class ExtensionManager {
                     LOGGER.trace("Dependency of extension {}: {}", discoveredExtension.name(), resolved);
                 }
 
-                ExtensionClassLoader extensionClassLoader = discoveredExtension.classLoader();
+                HierarchyClassLoader extensionClassLoader = discoveredExtension.classLoader();
                 for (String dependencyName : discoveredExtension.dependencies()) {
                     var resolved = extensions.stream()
                             .filter(ext -> ext.name().equalsIgnoreCase(dependencyName))
                             .findFirst()
                             .orElseThrow(() -> new IllegalStateException("Unknown dependency '" + dependencyName + "' of '" + discoveredExtension.name() + "'"));
 
-                    ExtensionClassLoader dependencyClassLoader = resolved.classLoader();
+                    HierarchyClassLoader dependencyClassLoader = resolved.classLoader();
 
                     extensionClassLoader.addChild(dependencyClassLoader);
                     LOGGER.trace("Dependency of extension {}: {}", discoveredExtension.name(), resolved);
