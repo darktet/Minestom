@@ -149,6 +149,23 @@ public final class ExtensionManager {
 
         //todo CREATE MISSING DIRECTORIES (only create libs dir if needed)
 
+        // Discover all extensions
+        Map<String, ExtensionDescriptor> extensionByName = discoverer.discover(extensionDataRoot)
+                .collect(Collectors.toMap(ext -> ext.name().toLowerCase(), Function.identity()));
+        if (extensionByName.isEmpty()) return;
+
+        // Compute the load order depending on dependencies
+        List<ExtensionDescriptor> loadOrder = computeLoadOrder(extensionByName);
+
+        // Pre initialize
+        for (ExtensionDescriptor ext : loadOrder) {
+            if (extensions.containsKey(ext.name().toLowerCase()))
+                continue; // Already loaded
+
+            boolean loaded = preloadExtension(ext);
+
+        }
+
         //todo PRE INIT
         //  - load dependencies
         //  - if all loaded do A, else B
@@ -180,26 +197,6 @@ public final class ExtensionManager {
     //
     // Loading
     //
-
-
-    private void loadExtensions2() {
-        // Discover all extensions
-        Map<String, ExtensionDescriptor> extensionByName = discoverer.discover(extensionDataRoot)
-                .collect(Collectors.toMap(ext -> ext.name().toLowerCase(), Function.identity()));
-        if (extensionByName.isEmpty()) return;
-
-        // Compute the load order depending on dependencies
-        List<ExtensionDescriptor> loadOrder = computeLoadOrder(extensionByName);
-
-
-        // For each extension:
-        //   - download external dependencies
-        //   - pre init
-        //   - remove it and all dependents if failed to load
-
-
-    }
-
 
     List<ExtensionDescriptor> computeLoadOrder(Map<String, ExtensionDescriptor> extensionsByName) {
         Map<ExtensionDescriptor, List<ExtensionDescriptor>> dependents = new HashMap<>();
@@ -246,8 +243,155 @@ public final class ExtensionManager {
         loadOrder.add(0, target);
     }
 
+    boolean preloadExtension(ExtensionDescriptor extension, Map<String, ExtensionDescriptor> extensionsById) {
+        // Load dependencies
+        for (Dependency dependency : extension.dependencies()) {
+            boolean loaded = loadDependency(extension, dependency, extensionsById);
+            if (!loaded) {
+                LOGGER.error("Failed to load {}, dependency {} could was not loaded.", extension.name(), dependency.id());
+                return false;
+            }
+        }
 
+        // Load extension
+        Extension extensionInstance = createExtensionImpl(extension);
+        extensions.put(extension.name().toLowerCase(), extensionInstance);
 
+        return true;
+    }
+
+    boolean loadDependency(ExtensionDescriptor target, Dependency dep, Map<String, ExtensionDescriptor> extensionsById) {
+        // Load child and get classloader
+        HierarchyClassLoader dependencyClassLoader = null;
+        if (dep instanceof Dependency.ExtensionDependency dependency) {
+            ExtensionDescriptor descriptor = extensionsById.get(dependency.id().toLowerCase());
+            //todo what happens if extension does not exist?
+            boolean loaded = preloadExtension(descriptor, extensionsById);
+            if (!loaded) return false;
+            dependencyClassLoader = descriptor.classLoader();
+        } else if (dep instanceof Dependency.MavenDependency dependency) {
+            Check.fail("Not implemented");
+        }
+
+        // Add classloader to target
+        Check.stateCondition(dependencyClassLoader == null, "Something went wrong while loading a dependency. (extension={0},dependency={1})", target, dep);
+        target.classLoader().addChild(dependencyClassLoader);
+        return true;
+    }
+
+    Extension createExtensionImpl(ExtensionDescriptor descriptor) {
+
+        //        // Create Extension (authors, version etc.)
+        //        String extensionName = discoveredExtension.name();
+        //        String mainClass = discoveredExtension.entrypoint();
+        //
+        //        HierarchyClassLoader loader = discoveredExtension.classLoader();
+        //
+        //        if (extensions.containsKey(extensionName.toLowerCase())) {
+        //            LOGGER.error("An extension called '{}' has already been registered.", extensionName);
+        //            return null;
+        //        }
+        //
+        //        Class<?> jarClass;
+        //        try {
+        //            jarClass = Class.forName(mainClass, true, loader);
+        //        } catch (ClassNotFoundException e) {
+        //            LOGGER.error("Could not find main class '{}' in extension '{}'.",
+        //                    mainClass, extensionName, e);
+        //            return null;
+        //        }
+        //
+        //        Class<? extends Extension> extensionClass;
+        //        try {
+        //            extensionClass = jarClass.asSubclass(Extension.class);
+        //        } catch (ClassCastException e) {
+        //            LOGGER.error("Main class '{}' in '{}' does not extend the 'Extension' superclass.", mainClass, extensionName, e);
+        //            return null;
+        //        }
+        //
+        //        Constructor<? extends Extension> constructor;
+        //        try {
+        //            constructor = extensionClass.getDeclaredConstructor();
+        //            // Let's just make it accessible, plugin creators don't have to make this public.
+        //            constructor.setAccessible(true);
+        //        } catch (NoSuchMethodException e) {
+        //            LOGGER.error("Main class '{}' in '{}' does not define a no-args constructor.", mainClass, extensionName, e);
+        //            return null;
+        //        }
+        //        Extension extension = null;
+        //        try {
+        //            extension = constructor.newInstance();
+        //        } catch (InstantiationException e) {
+        //            LOGGER.error("Main class '{}' in '{}' cannot be an abstract class.", mainClass, extensionName, e);
+        //            return null;
+        //        } catch (IllegalAccessException ignored) {
+        //            // We made it accessible, should not occur
+        //        } catch (InvocationTargetException e) {
+        //            LOGGER.error(
+        //                    "While instantiating the main class '{}' in '{}' an exception was thrown.",
+        //                    mainClass,
+        //                    extensionName,
+        //                    e.getTargetException()
+        //            );
+        //            return null;
+        //        }
+        //
+        //        // Set extension origin to its DiscoveredExtension
+        //        try {
+        //            Field originField = Extension.class.getDeclaredField("origin");
+        //            originField.setAccessible(true);
+        //            originField.set(extension, discoveredExtension);
+        //        } catch (IllegalAccessException e) {
+        //            // We made it accessible, should not occur
+        //        } catch (NoSuchFieldException e) {
+        //            LOGGER.error("Main class '{}' in '{}' has no description field.", mainClass, extensionName, e);
+        //            return null;
+        //        }
+        //
+        //        // Set logger
+        //        try {
+        //            Field loggerField = Extension.class.getDeclaredField("logger");
+        //            loggerField.setAccessible(true);
+        //            loggerField.set(extension, LoggerFactory.getLogger(extensionClass));
+        //        } catch (IllegalAccessException e) {
+        //            // We made it accessible, should not occur
+        //            exceptionManager.handleException(e);
+        //        } catch (NoSuchFieldException e) {
+        //            // This should also not occur (unless someone changed the logger in Extension superclass).
+        //            LOGGER.error("Main class '{}' in '{}' has no logger field.", mainClass, extensionName, e);
+        //        }
+        //
+        //        // Set event node
+        //        try {
+        //            EventNode<Event> eventNode = EventNode.all(extensionName); // Use the extension name
+        //            Field loggerField = Extension.class.getDeclaredField("eventNode");
+        //            loggerField.setAccessible(true);
+        //            loggerField.set(extension, eventNode);
+        //
+        //            globalEventNode.addChild(eventNode);
+        //        } catch (IllegalAccessException e) {
+        //            // We made it accessible, should not occur
+        //            exceptionManager.handleException(e);
+        //        } catch (NoSuchFieldException e) {
+        //            // This should also not occur
+        //            LOGGER.error("Main class '{}' in '{}' has no event node field.", mainClass, extensionName, e);
+        //        }
+        //
+        //        // add dependents to pre-existing extensions, so that they can easily be found during reloading
+        //        for (String dependencyName : discoveredExtension.dependencies()) {
+        //            Extension dependency = extensions.get(dependencyName.toLowerCase());
+        //            if (dependency == null) {
+        //                LOGGER.warn("Dependency {} of {} is null? This means the extension has been loaded without its dependency, which could cause issues later.", dependencyName, discoveredExtension.name());
+        //            } else {
+        //                dependency.getDependents().add(discoveredExtension.name());
+        //            }
+        //        }
+        //
+        //        // add to a linked hash map, as they preserve order
+        //        extensions.put(extensionName.toLowerCase(), extension);
+        //
+        //        return extension;
+    }
 
     //
     // OLD STUFF BELOW!!!
