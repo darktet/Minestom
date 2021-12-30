@@ -618,15 +618,12 @@ public final class MinecraftServer {
         Check.stateCondition(started, "The server is already started");
 
         extensionManager.start();
-        extensionManager.gotoPreInit();
 
         MinecraftServer.started = true;
 
         LOGGER.info("Starting Minestom server.");
 
         updateManager.start();
-
-        extensionManager.gotoInit();
 
         // Init server
         try {
