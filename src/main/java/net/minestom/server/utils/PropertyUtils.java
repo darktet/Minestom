@@ -1,7 +1,10 @@
 package net.minestom.server.utils;
 
-public final class PropertyUtil {
-    private PropertyUtil() {}
+import org.jetbrains.annotations.ApiStatus;
+
+@ApiStatus.Internal
+public final class PropertyUtils {
+    private PropertyUtils() {}
 
     public static boolean getBoolean(String name, boolean defaultValue) {
         boolean result = defaultValue;
